@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import cast
 
 from bs4 import BeautifulSoup
@@ -53,13 +55,26 @@ def make_empty_cell() -> Tag:
     return Tag(name="td")
 
 
+def _remove_suffix(text: str, suffix: str) -> str:
+    """Remove suffix from text if present (Python 3.8 compatible)."""
+    if text.endswith(suffix):
+        return text[:-len(suffix)]
+    return text
+
+
+def _remove_prefix(text: str, prefix: str) -> str:
+    """Remove prefix from text if present (Python 3.8 compatible)."""
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text
+
+
 def _normalize_table_cell_text(text: str) -> str:
-    return (
-        text.replace("|", "\\|")  # Escape pipe characters to prevent breaking table formatting
-        .replace("\n", "<br/>")  # Replace newlines with <br/> to preserve line breaks in tables
-        .removesuffix("<br/>")  # Remove trailing <br/> that may be added by the last cell in a row
-        .removeprefix("<br/>")  # Remove leading <br/> that may be added by the first cell in a row
-    )
+    result = text.replace("|", "\\|")  # Escape pipe characters to prevent breaking table formatting
+    result = result.replace("\n", "<br/>")  # Replace newlines with <br/> to preserve line breaks in tables
+    result = _remove_suffix(result, "<br/>")  # Remove trailing <br/> that may be added by the last cell in a row
+    result = _remove_prefix(result, "<br/>")  # Remove leading <br/> that may be added by the first cell in a row
+    return result
 
 
 class TableConverter(MarkdownConverter):

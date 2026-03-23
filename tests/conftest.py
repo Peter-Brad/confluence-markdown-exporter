@@ -1,5 +1,7 @@
 """Shared test fixtures and configuration for confluence-markdown-exporter tests."""
 
+from __future__ import annotations
+
 import importlib
 import sys
 import tempfile
@@ -160,6 +162,42 @@ def sample_connection_config() -> ConnectionConfig:
         max_backoff_retries=5,
         retry_status_codes=[413, 429, 502, 503, 504],
         verify_ssl=True,
+    )
+
+
+@pytest.fixture
+def confluence_server_info_cloud() -> dict[str, Any]:
+    """Sample Confluence Cloud server info for testing."""
+    from confluence_markdown_exporter.utils.confluence_version import ConfluenceServerInfo
+
+    return ConfluenceServerInfo(
+        version="cloud",
+        build_number=0,
+        deployment_type="cloud",
+    )
+
+
+@pytest.fixture
+def confluence_server_info_data_center_8() -> dict[str, Any]:
+    """Sample Confluence Data Center 8.x server info for testing."""
+    from confluence_markdown_exporter.utils.confluence_version import ConfluenceServerInfo
+
+    return ConfluenceServerInfo(
+        version="8.5.20",
+        build_number=8520,
+        deployment_type="data_center",
+    )
+
+
+@pytest.fixture
+def confluence_server_info_server_7() -> dict[str, Any]:
+    """Sample Confluence Server 7.x server info for testing."""
+    from confluence_markdown_exporter.utils.confluence_version import ConfluenceServerInfo
+
+    return ConfluenceServerInfo(
+        version="7.4.11",
+        build_number=74011,
+        deployment_type="server",
     )
 
 

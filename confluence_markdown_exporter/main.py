@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import List
+from typing import Optional
+
+from typing_extensions import Annotated
 
 import typer
 
@@ -18,7 +23,7 @@ DEBUG: bool = str_to_bool(os.getenv("DEBUG", "False"))
 app = typer.Typer()
 
 
-def override_output_path_config(value: Path | None) -> None:
+def override_output_path_config(value: Optional[Path]) -> None:
     """Override the default output path if provided."""
     if value is not None:
         set_setting("export.output_path", value)
@@ -26,9 +31,9 @@ def override_output_path_config(value: Path | None) -> None:
 
 @app.command(help="Export one or more Confluence pages by ID or URL to Markdown.")
 def pages(
-    pages: Annotated[list[str], typer.Argument(help="Page ID(s) or URL(s)")],
+    pages: Annotated[List[str], typer.Argument(help="Page ID(s) or URL(s)")],
     output_path: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option(
             help="Directory to write exported Markdown files to. Overrides config if set."
         ),
@@ -49,9 +54,9 @@ def pages(
 
 @app.command(help="Export Confluence pages and their descendant pages by ID or URL to Markdown.")
 def pages_with_descendants(
-    pages: Annotated[list[str], typer.Argument(help="Page ID(s) or URL(s)")],
+    pages: Annotated[List[str], typer.Argument(help="Page ID(s) or URL(s)")],
     output_path: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option(
             help="Directory to write exported Markdown files to. Overrides config if set."
         ),
@@ -71,9 +76,9 @@ def pages_with_descendants(
 
 @app.command(help="Export all Confluence pages of one or more spaces to Markdown.")
 def spaces(
-    space_keys: Annotated[list[str], typer.Argument()],
+    space_keys: Annotated[List[str], typer.Argument()],
     output_path: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option(
             help="Directory to write exported Markdown files to. Overrides config if set."
         ),
@@ -98,7 +103,7 @@ def spaces(
 @app.command(help="Export all Confluence pages across all spaces to Markdown.")
 def all_spaces(
     output_path: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option(
             help="Directory to write exported Markdown files to. Overrides config if set."
         ),
@@ -118,7 +123,7 @@ def all_spaces(
 @app.command(help="Open the interactive configuration menu or display current configuration.")
 def config(
     jump_to: Annotated[
-        str | None,
+        Optional[str],
         typer.Option(help="Jump directly to a config submenu, e.g. 'auth.confluence'"),
     ] = None,
     *,

@@ -490,13 +490,14 @@ class TestFetchDeletedPageIds:
         result = fetch_deleted_page_ids([])
         assert result == set()
 
+    @patch("confluence_markdown_exporter.confluence.should_use_v2_api")
     @patch("confluence_markdown_exporter.confluence.settings")
     @patch("confluence_markdown_exporter.confluence.confluence")
     def test_returns_deleted_ids(
-        self, mock_confluence: MagicMock, mock_settings: MagicMock
+        self, mock_confluence: MagicMock, mock_settings: MagicMock, mock_should_use_v2: MagicMock
     ) -> None:
         """Returns IDs that no longer exist on Confluence."""
-        mock_settings.connection_config.use_v2_api = True
+        mock_should_use_v2.return_value = True
         mock_settings.export.existence_check_batch_size = 250
         mock_confluence.get.return_value = {
             "results": [{"id": "100"}, {"id": "300"}],
@@ -507,13 +508,14 @@ class TestFetchDeletedPageIds:
         result = fetch_deleted_page_ids(["100", "200", "300"])
         assert result == {"200"}
 
+    @patch("confluence_markdown_exporter.confluence.should_use_v2_api")
     @patch("confluence_markdown_exporter.confluence.settings")
     @patch("confluence_markdown_exporter.confluence.confluence")
     def test_api_error_returns_no_deleted_ids(
-        self, mock_confluence: MagicMock, mock_settings: MagicMock
+        self, mock_confluence: MagicMock, mock_settings: MagicMock, mock_should_use_v2: MagicMock
     ) -> None:
         """On API error, returns empty set (safe: don't delete anything)."""
-        mock_settings.connection_config.use_v2_api = True
+        mock_should_use_v2.return_value = True
         mock_settings.export.existence_check_batch_size = 250
         mock_confluence.get.side_effect = Exception("Network error")
 
@@ -522,11 +524,12 @@ class TestFetchDeletedPageIds:
         result = fetch_deleted_page_ids(["100", "200"])
         assert result == set()
 
+    @patch("confluence_markdown_exporter.confluence.should_use_v2_api")
     @patch("confluence_markdown_exporter.confluence.settings")
     @patch("confluence_markdown_exporter.confluence.confluence")
-    def test_batches_large_sets(self, mock_confluence: MagicMock, mock_settings: MagicMock) -> None:
+    def test_batches_large_sets(self, mock_confluence: MagicMock, mock_settings: MagicMock, mock_should_use_v2: MagicMock) -> None:
         """300 IDs are split into 2 v2-API batches of 250."""
-        mock_settings.connection_config.use_v2_api = True
+        mock_should_use_v2.return_value = True
         mock_settings.export.existence_check_batch_size = 250
         ids = [str(i) for i in range(300)]
         mock_confluence.get.return_value = {"results": []}
@@ -536,6 +539,52 @@ class TestFetchDeletedPageIds:
         fetch_deleted_page_ids(ids)
 
         assert mock_confluence.get.call_count == 2
+
+    @patch("confluence_markdown_exporter.confluence.should_use_v2_api")
+    @patch("confluence_markdown_exporter.confluence.settings")
+    @patch("confluence_markdown_exporter.confluence.confluence")
+    def test_v2_api_falls_back_to_v1_on_error(
+        self, mock_confluence: MagicMock, mock_settings: MagicMock, mock_should_use_v2: MagicMock
+    ) -> None:
+        """When v2 API fails, falls back to v1 CQL API."""
+        mock_should_use_v2.return_value = True
+        mock_settings.export.existence_check_batch_size = 250
+
+        # First call (v2) fails, second call (v1) succeeds
+        mock_confluence.get.side_effect = [
+            Exception("v2 not available"),  # v2 call fails
+            {"results": [{"id": "100"}]},  # v1 call succeeds
+        ]
+
+        from confluence_markdown_exporter.confluence import fetch_deleted_page_ids
+
+        result = fetch_deleted_page_ids(["100", "200"])
+
+        # Both APIs were tried, v1 returned ID 100, so 200 is deleted
+        assert result == {"200"}
+        assert mock_confluence.get.call_count == 2
+
+    @patch("confluence_markdown_exporter.confluence.should_use_v2_api")
+    @patch("confluence_markdown_exporter.confluence.settings")
+    @patch("confluence_markdown_exporter.confluence.confluence")
+    def test_uses_v1_when_v2_disabled(
+        self, mock_confluence: MagicMock, mock_settings: MagicMock, mock_should_use_v2: MagicMock
+    ) -> None:
+        """Uses v1 CQL API when v2 is disabled."""
+        mock_should_use_v2.return_value = False
+        mock_settings.export.existence_check_batch_size = 250
+        mock_confluence.get.return_value = {"results": [{"id": "100"}]}
+
+        from confluence_markdown_exporter.confluence import fetch_deleted_page_ids
+
+        result = fetch_deleted_page_ids(["100", "200"])
+
+        assert result == {"200"}
+        # Should only make one call (v1)
+        assert mock_confluence.get.call_count == 1
+        # Verify it was a CQL call
+        call_args = mock_confluence.get.call_args
+        assert "rest/api/content/search" in str(call_args)
 
 
 class TestConfluenceLockSave:
@@ -569,13 +618,10 @@ class TestConfluenceLockSave:
                 }
             )
 
-            with (
-                patch(
-                    "confluence_markdown_exporter.utils.lockfile.Path.replace",
-                    side_effect=OSError("disk error"),
-                ),
-                pytest.raises(OSError, match="disk error"),
-            ):
+            with patch(
+                "confluence_markdown_exporter.utils.lockfile.Path.replace",
+                side_effect=OSError("disk error"),
+            ), pytest.raises(OSError, match="disk error"):
                 lock.save(lockfile_path)
 
             tmp_files = list(Path(tmp).glob("*.tmp"))
@@ -608,13 +654,10 @@ class TestConfluenceLockSave:
                 }
             )
 
-            with (
-                patch(
-                    "confluence_markdown_exporter.utils.lockfile.Path.replace",
-                    side_effect=OSError("disk error"),
-                ),
-                pytest.raises(OSError, match="disk error"),
-            ):
+            with patch(
+                "confluence_markdown_exporter.utils.lockfile.Path.replace",
+                side_effect=OSError("disk error"),
+            ), pytest.raises(OSError, match="disk error"):
                 lock.save(lockfile_path)
 
             content = lockfile_path.read_text(encoding="utf-8")

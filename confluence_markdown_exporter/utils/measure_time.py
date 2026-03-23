@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import logging
 import time
 from collections.abc import Callable
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import ParamSpec
 from typing import TypeVar
+from typing_extensions import ParamSpec
 
 from dateutil.relativedelta import relativedelta
 

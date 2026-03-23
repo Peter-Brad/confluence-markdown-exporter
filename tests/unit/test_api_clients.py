@@ -1,11 +1,14 @@
 """Unit tests for api_clients module."""
 
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 import requests
 from atlassian.errors import ApiError
+from pydantic import SecretStr
 
 from confluence_markdown_exporter.api_clients import ApiClientFactory
 from confluence_markdown_exporter.api_clients import get_confluence_instance
@@ -71,10 +74,9 @@ class TestApiClientFactory:
         result = factory.create_confluence(sample_api_details)
 
         assert result == mock_instance
+        # With the new auth priority, PAT takes precedence over username/api_token
         mock_confluence_sdk.assert_called_once_with(
             url=str(sample_api_details.url),
-            username=sample_api_details.username.get_secret_value(),
-            password=sample_api_details.api_token.get_secret_value(),
             token=sample_api_details.pat.get_secret_value(),
             timeout=30,
         )
@@ -110,10 +112,9 @@ class TestApiClientFactory:
         result = factory.create_jira(sample_api_details)
 
         assert result == mock_instance
+        # With the new auth priority, PAT takes precedence over username/api_token
         mock_jira_sdk.assert_called_once_with(
             url=str(sample_api_details.url),
-            username=sample_api_details.username.get_secret_value(),
-            password=sample_api_details.api_token.get_secret_value(),
             token=sample_api_details.pat.get_secret_value(),
             timeout=30,
         )
@@ -250,3 +251,213 @@ class TestGetJiraInstance:
         # Factory should only be called once due to caching
         assert mock_factory_class.call_count == 1
         assert mock_factory.create_jira.call_count == 1
+
+
+class TestGetAuthParams:
+    """Test cases for ApiClientFactory._get_auth_params method."""
+
+    def test_cookie_string_auth(self) -> None:
+        """Test authentication with cookie string."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookies=SecretStr("JSESSIONID=abc123; token=xyz"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"cookies": {"JSESSIONID": "abc123", "token": "xyz"}}
+
+    def test_cookie_file_auth(self, tmp_path: Path) -> None:
+        """Test authentication with cookie file."""
+        cookie_file = tmp_path / "cookies.txt"
+        cookie_file.write_text(
+            ".example.com\tTRUE\t/\tFALSE\t0\tJSESSIONID\tabc123\n"
+        )
+
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookie_file=str(cookie_file),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"cookies": {"JSESSIONID": "abc123"}}
+
+    def test_cookie_string_takes_precedence_over_pat(self) -> None:
+        """Test that cookie string takes precedence over PAT."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookies=SecretStr("JSESSIONID=abc123"),
+            pat=SecretStr("my-pat-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"cookies": {"JSESSIONID": "abc123"}}
+
+    def test_cookie_string_takes_precedence_over_basic_auth(self) -> None:
+        """Test that cookie string takes precedence over basic auth."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookies=SecretStr("JSESSIONID=abc123"),
+            username=SecretStr("user@example.com"),
+            api_token=SecretStr("api-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"cookies": {"JSESSIONID": "abc123"}}
+
+    def test_cookie_file_takes_precedence_over_pat(self, tmp_path: Path) -> None:
+        """Test that cookie file takes precedence over PAT."""
+        cookie_file = tmp_path / "cookies.txt"
+        cookie_file.write_text(
+            ".example.com\tTRUE\t/\tFALSE\t0\tJSESSIONID\tabc123\n"
+        )
+
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookie_file=str(cookie_file),
+            pat=SecretStr("my-pat-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"cookies": {"JSESSIONID": "abc123"}}
+
+    def test_pat_auth(self) -> None:
+        """Test authentication with PAT."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            pat=SecretStr("my-pat-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"token": "my-pat-token"}
+
+    def test_pat_takes_precedence_over_basic_auth(self) -> None:
+        """Test that PAT takes precedence over basic auth."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            pat=SecretStr("my-pat-token"),
+            username=SecretStr("user@example.com"),
+            api_token=SecretStr("api-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"token": "my-pat-token"}
+
+    def test_basic_auth(self) -> None:
+        """Test authentication with username and API token."""
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            username=SecretStr("user@example.com"),
+            api_token=SecretStr("api-token"),
+        )
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {"username": "user@example.com", "password": "api-token"}
+
+    def test_no_auth_returns_empty_dict(self) -> None:
+        """Test that missing auth returns empty dict."""
+        auth = ApiDetails(url="https://test.atlassian.net/")
+        factory = ApiClientFactory({})
+
+        result = factory._get_auth_params(auth)
+
+        assert result == {}
+
+
+class TestApiClientFactoryWithCookies:
+    """Test cases for ApiClientFactory with cookie authentication."""
+
+    @patch("confluence_markdown_exporter.api_clients.ConfluenceApiSdk")
+    def test_create_confluence_with_cookie_string(
+        self, mock_confluence_sdk: MagicMock
+    ) -> None:
+        """Test Confluence client creation with cookie string."""
+        mock_instance = MagicMock()
+        mock_instance.get_all_spaces.return_value = [{"key": "TEST"}]
+        mock_confluence_sdk.return_value = mock_instance
+
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookies=SecretStr("JSESSIONID=abc123"),
+        )
+        config = {"timeout": 30}
+        factory = ApiClientFactory(config)
+
+        result = factory.create_confluence(auth)
+
+        assert result == mock_instance
+        mock_confluence_sdk.assert_called_once_with(
+            url="https://test.atlassian.net/",
+            cookies={"JSESSIONID": "abc123"},
+            timeout=30,
+        )
+
+    @patch("confluence_markdown_exporter.api_clients.JiraApiSdk")
+    def test_create_jira_with_cookie_string(
+        self, mock_jira_sdk: MagicMock
+    ) -> None:
+        """Test Jira client creation with cookie string."""
+        mock_instance = MagicMock()
+        mock_instance.get_all_projects.return_value = [{"key": "TEST"}]
+        mock_jira_sdk.return_value = mock_instance
+
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookies=SecretStr("JSESSIONID=abc123"),
+        )
+        config = {"timeout": 30}
+        factory = ApiClientFactory(config)
+
+        result = factory.create_jira(auth)
+
+        assert result == mock_instance
+        mock_jira_sdk.assert_called_once_with(
+            url="https://test.atlassian.net/",
+            cookies={"JSESSIONID": "abc123"},
+            timeout=30,
+        )
+
+    @patch("confluence_markdown_exporter.api_clients.ConfluenceApiSdk")
+    def test_create_confluence_with_cookie_file(
+        self, mock_confluence_sdk: MagicMock, tmp_path: Path
+    ) -> None:
+        """Test Confluence client creation with cookie file."""
+        cookie_file = tmp_path / "cookies.txt"
+        cookie_file.write_text(
+            ".example.com\tTRUE\t/\tFALSE\t0\tJSESSIONID\tabc123\n"
+        )
+
+        mock_instance = MagicMock()
+        mock_instance.get_all_spaces.return_value = [{"key": "TEST"}]
+        mock_confluence_sdk.return_value = mock_instance
+
+        auth = ApiDetails(
+            url="https://test.atlassian.net/",
+            cookie_file=str(cookie_file),
+        )
+        config = {"timeout": 30}
+        factory = ApiClientFactory(config)
+
+        result = factory.create_confluence(auth)
+
+        assert result == mock_instance
+        mock_confluence_sdk.assert_called_once_with(
+            url="https://test.atlassian.net/",
+            cookies={"JSESSIONID": "abc123"},
+            timeout=30,
+        )

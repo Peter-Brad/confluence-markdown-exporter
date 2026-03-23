@@ -1,5 +1,7 @@
 """Handles storage and retrieval of application data (auth and settings) for the exporter."""
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
@@ -76,13 +78,13 @@ class ConnectionConfig(BaseModel):
             "Timeout in seconds for API requests. Prevents hanging on slow/unresponsive servers."
         ),
     )
-    use_v2_api: bool = Field(
-        default=False,
+    use_v2_api: Literal["auto", True, False] = Field(
+        default="auto",
         title="Use Confluence v2 REST API",
         description=(
-            "Enable Confluence REST API v2 endpoints where available. "
-            "Supported by Atlassian Cloud and Confluence Data Center 8+. "
-            "Must be disabled for older self-hosted Confluence Server instances."
+            "'auto' (recommended) - Auto-detect based on server version. "
+            "True - Force enable (Cloud or Data Center 8+ only). "
+            "False - Force disable (for older Server instances)."
         ),
     )
 
@@ -119,8 +121,26 @@ class ApiDetails(BaseModel):
             "See your Atlassian instance documentation for how to create a PAT."
         ),
     )
+    cookies: SecretStr = Field(
+        SecretStr(""),
+        title="Cookies",
+        description=(
+            "Cookie string for authentication (e.g., 'JSESSIONID=xxx; atlassian.xsrf.token=yyy'). "
+            "Useful for Confluence Server/Data Center where API tokens are not available. "
+            "Extract cookies from your browser's developer tools after logging in."
+        ),
+    )
+    cookie_file: str = Field(
+        "",
+        title="Cookie File Path",
+        description=(
+            "Path to a Netscape-format cookie file (cookies.txt). "
+            "Supports exporting cookies from browsers using extensions like 'EditThisCookie'. "
+            "If both cookies and cookie_file are provided, cookies takes precedence."
+        ),
+    )
 
-    @field_serializer("username", "api_token", "pat", when_used="json")
+    @field_serializer("username", "api_token", "pat", "cookies", when_used="json")
     def dump_secret(self, v: SecretStr) -> str:
         return v.get_secret_value()
 

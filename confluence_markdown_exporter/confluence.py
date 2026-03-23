@@ -3,6 +3,8 @@
 https://developer.atlassian.com/cloud/confluence/rest/v1/intro
 """
 
+from __future__ import annotations
+
 import functools
 import json
 import logging
@@ -15,8 +17,9 @@ from os import PathLike
 from pathlib import Path
 from string import Template
 from typing import Literal
-from typing import TypeAlias
+from typing import Union
 from typing import cast
+from typing_extensions import TypeAlias
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
@@ -36,6 +39,7 @@ from confluence_markdown_exporter.api_clients import get_confluence_instance
 from confluence_markdown_exporter.api_clients import get_jira_instance
 from confluence_markdown_exporter.utils.app_data_store import get_settings
 from confluence_markdown_exporter.utils.app_data_store import set_setting
+from confluence_markdown_exporter.utils.confluence_version import should_use_v2_api
 from confluence_markdown_exporter.utils.drawio_converter import load_and_parse_drawio
 from confluence_markdown_exporter.utils.export import sanitize_filename
 from confluence_markdown_exporter.utils.export import sanitize_key
@@ -45,7 +49,7 @@ from confluence_markdown_exporter.utils.table_converter import TableConverter
 from confluence_markdown_exporter.utils.type_converter import str_to_bool
 
 JsonResponse: TypeAlias = dict
-StrPath: TypeAlias = str | PathLike[str]
+StrPath: TypeAlias = Union[str, PathLike]
 
 DEBUG: bool = str_to_bool(os.getenv("DEBUG", "False"))
 
@@ -247,11 +251,19 @@ class Attachment(Document):
 
     @property
     def extension(self) -> str:
+        # Handle special cases for draw.io files
         if self.comment == "draw.io diagram" and self.media_type == "application/vnd.jgraph.mxfile":
             return ".drawio"
         if self.comment == "draw.io preview" and self.media_type == "image/png":
             return ".drawio.png"
 
+        # Try to get extension from the original filename (title) first
+        if self.title and "." in self.title:
+            ext = Path(self.title).suffix.lower()
+            if ext:
+                return ext
+
+        # Fall back to guessing from media type
         return mimetypes.guess_extension(self.media_type) or ""
 
     @property
@@ -330,6 +342,7 @@ class Attachment(Document):
             response = confluence._session.get(
                 str(confluence.url + self.download_link),
                 timeout=settings.connection_config.timeout,
+                verify=settings.connection_config.verify_ssl,
             )
             response.raise_for_status()  # Raise error if request fails
         except HTTPError:
@@ -1379,10 +1392,9 @@ def _fetch_page_ids_cql_batch(batch: list[str]) -> set[str]:
 def fetch_deleted_page_ids(page_ids: list[str]) -> set[str]:
     """Return the subset of *page_ids* that no longer exist in Confluence.
 
-    Uses the v2 REST API when ``connection_config.use_v2_api`` is enabled
-    (multiple ``id`` query params, up to ``export.existence_check_batch_size``
-    IDs per request), or the v1 CQL content search otherwise (capped at
-    :data:`_CQL_MAX_BATCH_SIZE` IDs per request).
+    Uses the v2 REST API when ``connection_config.use_v2_api`` is "auto" and
+    the server supports it, or when explicitly set to True.
+    Falls back to v1 CQL API if v2 fails or is not supported.
 
     Per-batch API failures are handled safely: affected IDs are assumed to
     still exist so they are never accidentally deleted.
@@ -1390,7 +1402,8 @@ def fetch_deleted_page_ids(page_ids: list[str]) -> set[str]:
     if not page_ids:
         return set()
 
-    use_v2 = settings.connection_config.use_v2_api
+    # Determine whether to use v2 API based on config and server capabilities
+    use_v2 = should_use_v2_api(settings.connection_config.use_v2_api)
     batch_size = settings.export.existence_check_batch_size
     effective_batch_size = batch_size if use_v2 else min(batch_size, _CQL_MAX_BATCH_SIZE)
     existing: set[str] = set()
@@ -1399,7 +1412,16 @@ def fetch_deleted_page_ids(page_ids: list[str]) -> set[str]:
         batch = page_ids[i : i + effective_batch_size]
         try:
             if use_v2:
-                existing.update(_fetch_page_ids_v2_batch(batch))
+                try:
+                    existing.update(_fetch_page_ids_v2_batch(batch))
+                except Exception as e:  # noqa: BLE001
+                    # v2 API failed, log warning and fall back to v1 for this batch
+                    logger.warning(
+                        "v2 API failed for batch (%d IDs), falling back to v1: %s",
+                        len(batch),
+                        e,
+                    )
+                    existing.update(_fetch_page_ids_cql_batch(batch))
             else:
                 existing.update(_fetch_page_ids_cql_batch(batch))
         except Exception:  # noqa: BLE001

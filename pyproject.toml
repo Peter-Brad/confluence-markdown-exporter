@@ -12,9 +12,9 @@ license = { text = "MIT" }
 authors = [
     { name = "Sebastian Penhouet" }
 ]
-requires-python = ">= 3.10"
+requires-python = ">= 3.8"
 dependencies = [
-    'atlassian-python-api',
+    "atlassian-python-api==3.41.21",
     'jmespath',
     'markdownify',
     'pydantic-settings',

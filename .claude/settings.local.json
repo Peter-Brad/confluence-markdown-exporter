@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip show:*)",
+      "WebSearch",
+      "WebFetch(domain:atlassian-python-api.readthedocs.io)",
+      "Bash(done)",
+      "WebFetch(domain:developer.atlassian.com)",
+      "WebFetch(domain:www.tiny.cloud)"
+    ]
+  }
+}

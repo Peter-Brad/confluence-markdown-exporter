@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Literal
 from typing import get_args
@@ -220,7 +222,7 @@ def _main_config_menu(settings: dict, default: tuple[str, bool] | None = None) -
                 )
             )
         else:
-            display_val = "Not set" if isinstance(v, str | SecretStr) and str(v) == "" else v
+            display_val = "Not set" if isinstance(v, (str, SecretStr)) and str(v) == "" else v
             choices.append(
                 Choice(
                     title=[
@@ -317,7 +319,7 @@ def _get_choices(config_dict: dict, model: type[BaseModel]) -> list:
                 )
             )
         else:
-            display_val = "Not set" if isinstance(v, str | SecretStr) and str(v) == "" else v
+            display_val = "Not set" if isinstance(v, (str, SecretStr)) and str(v) == "" else v
             choices.append(
                 Choice(
                     title=[

@@ -1,5 +1,7 @@
 """Utility module for parsing DrawIO files and extracting mermaid diagrams."""
 
+from __future__ import annotations
+
 import html
 import json
 import logging
