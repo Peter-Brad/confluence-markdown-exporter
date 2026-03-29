@@ -301,6 +301,47 @@ class ExportConfig(BaseModel):
             "For self-hosted Confluence (CQL), this is internally capped at 25."
         ),
     )
+    export_format: Literal["markdown", "html", "both"] = Field(
+        default="markdown",
+        title="Export Format",
+        description=(
+            "Output format for exported pages.\n"
+            "  - `markdown`: Convert to Markdown format\n"
+            "  - `html`: Export as HTML with TinyMCE 5 compatibility\n"
+            "  - `both`: Export both Markdown and HTML files"
+        ),
+    )
+    html_body_source: Literal["view", "export_view", "editor2"] = Field(
+        default="export_view",
+        title="HTML Body Source",
+        description=(
+            "Which Confluence HTML representation to use for HTML export.\n"
+            "  - `view`: body.view - rendered view HTML\n"
+            "  - `export_view`: body.export_view - export view HTML (includes more details)\n"
+            "  - `editor2`: body.editor2 - Storage Format XML (converted to HTML)"
+        ),
+    )
+    html_embed_images: bool = Field(
+        default=True,
+        title="Embed Images as Local Files",
+        description=(
+            "Download images and attachments locally, using relative paths in HTML. "
+            "If False, original Confluence URLs are preserved."
+        ),
+    )
+    html_wrap_document: bool = Field(
+        default=True,
+        title="Wrap as Complete HTML Document",
+        description="Wrap content in a complete HTML document structure with <html>, <head>, <body> tags.",
+    )
+    html_page_path: str = Field(
+        default="{space_name}/{homepage_title}/{ancestor_titles}/{page_title}.html",
+        title="HTML Page Path Template",
+        description=(
+            "Template for exported HTML file paths (used when export_format is 'html' or 'both').\n"
+            "Available variables are the same as page_path template."
+        ),
+    )
 
 
 class ConfigModel(BaseModel):

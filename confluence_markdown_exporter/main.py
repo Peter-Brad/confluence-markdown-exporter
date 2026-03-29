@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import List
+from typing import Literal
 from typing import Optional
 
 from typing_extensions import Annotated
@@ -29,13 +30,27 @@ def override_output_path_config(value: Optional[Path]) -> None:
         set_setting("export.output_path", value)
 
 
-@app.command(help="Export one or more Confluence pages by ID or URL to Markdown.")
+def override_export_format(value: Optional[str]) -> None:
+    """Override the export format if provided."""
+    if value is not None:
+        set_setting("export.export_format", value)
+
+
+@app.command(help="Export one or more Confluence pages by ID or URL.")
 def pages(
     pages: Annotated[List[str], typer.Argument(help="Page ID(s) or URL(s)")],
     output_path: Annotated[
         Optional[Path],
         typer.Option(
-            help="Directory to write exported Markdown files to. Overrides config if set."
+            help="Directory to write exported files to. Overrides config if set."
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: markdown, html, or both. Overrides config if set.",
         ),
     ] = None,
 ) -> None:
@@ -44,6 +59,7 @@ def pages(
 
     with measure(f"Export pages {', '.join(pages)}"):
         override_output_path_config(output_path)
+        override_export_format(format)
         LockfileManager.init()
         for page in pages:
             _page = Page.from_id(int(page)) if page.isdigit() else Page.from_url(page)
@@ -52,13 +68,21 @@ def pages(
         sync_removed_pages()
 
 
-@app.command(help="Export Confluence pages and their descendant pages by ID or URL to Markdown.")
+@app.command(help="Export Confluence pages and their descendant pages by ID or URL.")
 def pages_with_descendants(
     pages: Annotated[List[str], typer.Argument(help="Page ID(s) or URL(s)")],
     output_path: Annotated[
         Optional[Path],
         typer.Option(
-            help="Directory to write exported Markdown files to. Overrides config if set."
+            help="Directory to write exported files to. Overrides config if set."
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: markdown, html, or both. Overrides config if set.",
         ),
     ] = None,
 ) -> None:
@@ -67,6 +91,7 @@ def pages_with_descendants(
 
     with measure(f"Export pages {', '.join(pages)} with descendants"):
         override_output_path_config(output_path)
+        override_export_format(format)
         LockfileManager.init()
         for page in pages:
             _page = Page.from_id(int(page)) if page.isdigit() else Page.from_url(page)
@@ -74,13 +99,21 @@ def pages_with_descendants(
         sync_removed_pages()
 
 
-@app.command(help="Export all Confluence pages of one or more spaces to Markdown.")
+@app.command(help="Export all Confluence pages of one or more spaces.")
 def spaces(
     space_keys: Annotated[List[str], typer.Argument()],
     output_path: Annotated[
         Optional[Path],
         typer.Option(
-            help="Directory to write exported Markdown files to. Overrides config if set."
+            help="Directory to write exported files to. Overrides config if set."
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: markdown, html, or both. Overrides config if set.",
         ),
     ] = None,
 ) -> None:
@@ -93,6 +126,7 @@ def spaces(
 
     with measure(f"Export spaces {', '.join(normalized_space_keys)}"):
         override_output_path_config(output_path)
+        override_export_format(format)
         LockfileManager.init()
         for space_key in normalized_space_keys:
             space = Space.from_key(space_key)
@@ -100,12 +134,20 @@ def spaces(
         sync_removed_pages()
 
 
-@app.command(help="Export all Confluence pages across all spaces to Markdown.")
+@app.command(help="Export all Confluence pages across all spaces.")
 def all_spaces(
     output_path: Annotated[
         Optional[Path],
         typer.Option(
-            help="Directory to write exported Markdown files to. Overrides config if set."
+            help="Directory to write exported files to. Overrides config if set."
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: markdown, html, or both. Overrides config if set.",
         ),
     ] = None,
 ) -> None:
@@ -114,6 +156,7 @@ def all_spaces(
 
     with measure("Export all spaces"):
         override_output_path_config(output_path)
+        override_export_format(format)
         LockfileManager.init()
         org = Organization.from_api()
         org.export()

@@ -268,16 +268,30 @@ class Attachment(Document):
 
     @property
     def filename(self) -> str:
-        return f"{self.file_id}{self.extension}"
+        # If file_id is empty, use the title (original filename)
+        if self.file_id:
+            return f"{self.file_id}{self.extension}"
+        # Use title as filename, which already includes extension
+        if self.title:
+            return sanitize_filename(self.title)
+        # Fallback: use attachment id with extension
+        return f"{self.id}{self.extension}"
 
     @property
     def _template_vars(self) -> dict[str, str]:
+        # When file_id is empty, use title (without extension) as fallback
+        file_id_value = self.file_id
+        if not file_id_value and self.title:
+            # Use title filename without extension as file_id fallback
+            # Sanitize to handle spaces and special characters
+            file_id_value = sanitize_filename(Path(self.title).stem)
+
         return {
             **super()._template_vars,
             "attachment_id": str(self.id),
             "attachment_title": sanitize_filename(self.title),
             # file_id is a GUID and does not need sanitized.
-            "attachment_file_id": self.file_id,
+            "attachment_file_id": file_id_value,
             "attachment_extension": self.extension,
         }
 
@@ -455,6 +469,38 @@ class Page(Document):
         return Path(filepath_template.safe_substitute(self._template_vars))
 
     @property
+    def html_export_path(self) -> Path:
+        """Get export path for HTML file."""
+        filepath_template = Template(settings.export.html_page_path.replace("{", "${"))
+        return Path(filepath_template.safe_substitute(self._template_vars))
+
+    @property
+    def html_output(self) -> str:
+        """Get HTML output for TinyMCE 5 compatibility."""
+        from confluence_markdown_exporter.utils.html_converter import (
+            ConfluenceHtmlConverter,
+        )
+
+        converter = ConfluenceHtmlConverter(self)
+
+        # Select source based on configuration
+        if settings.export.html_body_source == "view":
+            html_content = self.body
+        elif settings.export.html_body_source == "editor2":
+            # For now, use body_export as editor2 needs XML parsing
+            html_content = self.body_export
+        else:  # export_view
+            html_content = self.body_export
+
+        if settings.export.include_document_title:
+            html_content = f"<h1>{self.title}</h1>{html_content}"
+
+        if settings.export.html_wrap_document:
+            return converter.convert_to_document(html_content)
+        else:
+            return converter.convert(html_content)
+
+    @property
     def html(self) -> str:
         if settings.export.include_document_title:
             return f"<h1>{self.title}</h1>{self.body}"
@@ -471,9 +517,17 @@ class Page(Document):
 
         if DEBUG:
             self.export_body()
-        # Export attachments first so the files can be utilized during markdown conversion
+        # Export attachments first so the files can be utilized during conversion
         self.export_attachments()
-        self.export_markdown()
+
+        # Export based on format setting
+        if settings.export.export_format == "html":
+            self.export_html()
+        elif settings.export.export_format == "markdown":
+            self.export_markdown()
+        else:  # both
+            self.export_markdown()
+            self.export_html()
 
     def export_with_descendants(self) -> None:
         export_pages([self, *self.descendants])
@@ -504,6 +558,13 @@ class Page(Document):
         save_file(
             settings.export.output_path / self.export_path,
             self.markdown,
+        )
+
+    def export_html(self) -> None:
+        """Export page as HTML file."""
+        save_file(
+            settings.export.output_path / self.html_export_path,
+            self.html_output,
         )
 
     def export_attachments(self) -> None:
@@ -1009,7 +1070,11 @@ class Page(Document):
             return self.convert_user_name(user.display_name)
 
         def convert_user_name(self, name: str) -> str:
-            return name.removesuffix("(Unlicensed)").removesuffix("(Deactivated)").strip()
+            # removesuffix is Python 3.9+, use endswith for 3.8 compatibility
+            for suffix in ["(Unlicensed)", "(Deactivated)"]:
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)]
+            return name.strip()
 
         def convert_li(self, el: BeautifulSoup, text: str, parent_tags: list[str]) -> str:
             md = super().convert_li(el, text, parent_tags)
@@ -1124,7 +1189,7 @@ class Page(Document):
             Returns:
                 Markdown formatted mermaid diagram or None if not found.
             """
-            drawio_title = filename.removesuffix(".png")
+            drawio_title = filename[:-4] if filename.endswith(".png") else filename
             drawio_attachments = self.page.get_attachments_by_title(drawio_title)
 
             if len(drawio_attachments) == 0:

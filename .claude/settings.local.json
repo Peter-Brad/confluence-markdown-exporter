@@ -8,7 +8,9 @@
       "WebFetch(domain:atlassian-python-api.readthedocs.io)",
       "Bash(done)",
       "WebFetch(domain:developer.atlassian.com)",
-      "WebFetch(domain:www.tiny.cloud)"
+      "WebFetch(domain:www.tiny.cloud)",
+      "Bash(conda info:*)",
+      "Bash(conda run:*)"
     ]
   }
 }
